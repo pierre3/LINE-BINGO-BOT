@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.26430.14
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BingoWebApi", "BingoWebApi\BingoWebApi.csproj", "{083F6DFF-164D-418C-AE09-BE5C10E9DF20}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BingoWebApi", "BingoWebApi\BingoWebApi.csproj", "{083F6DFF-164D-418C-AE09-BE5C10E9DF20}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -18,5 +18,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C73C4A49-131B-4C4B-8C54-F7B937A002EB}
 	EndGlobalSection
 EndGlobal

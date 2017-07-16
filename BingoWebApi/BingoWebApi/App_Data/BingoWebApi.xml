@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>BingoWebApi</name>
+    </assembly>
+    <members>
+        <member name="M:BingoWebApi.Controllers.CardController.PostAsync(BingoWebApi.Models.AddCardParameter)">
+            <summary>
+            Add a new card to specified game.
+            </summary>
+            <param name="param">Specify a game ID and a keyword.</param>
+            <returns>Card ID</returns>
+            <response code="404">Responses if a specified game is not found.</response>
+            <response code="403">Responses if a keyword is wrong.</response>
+            <response code="200">Returns a new card ID.</response>
+        </member>
+        <member name="M:BingoWebApi.Controllers.CardController.GetAsync(System.Int32)">
+            <summary>
+            Get a card status.
+            </summary>
+            <param name="id">Card ID</param>
+            <returns>Returns a card status.</returns>
+            <response code="404">Responses if a specified card is not found.</response>
+            <response code="200">Returns a card status.</response>
+        </member>
+        <member name="M:BingoWebApi.Controllers.GameController.GetAsync(System.Int32)">
+            <summary>
+            Gets a game status
+            </summary>
+            <param name="id">Game ID</param>
+            <returns>Returns a game status.</returns>
+            <response code="404">Responses if a specified game is not found.</response>
+            <response code="200">Returns a game status.</response>
+        </member>
+        <member name="M:BingoWebApi.Controllers.GameController.PostAsync(BingoWebApi.Models.NewGameParameter)">
+            <summary>
+            Create a new game.
+            </summary>
+            <param name="param">Set a keyword necessary for creating a new card.</param>
+            <returns>Returns a new game status.</returns>
+            <response code="200">Returns a new game status.</response>
+        </member>
+        <member name="M:BingoWebApi.Controllers.GameController.PutAsync(System.Int32,BingoWebApi.Models.GameAccessParameter)">
+            <summary>
+            Draws a next number.
+            </summary>
+            <param name="id">Game ID</param>
+            <param name="param">Sets an accessKey.</param>
+            <returns>Returns a game status.</returns>
+            <response code="404">Responses if a specified game is not found.</response>
+            <response code="401">Responses if an access key is invalid.</response>
+            <response code="200">Returns a game status.</response>
+        </member>
+        <member name="M:BingoWebApi.Controllers.GameController.DeleteAsync(System.Int32,System.String)">
+            <summary>
+            Delete a game
+            </summary>
+            <param name="id">Game ID</param>
+            <param name="accessKey">Sets an accessKey.</param>
+            <response code="401">Responses if an access key is invalid.</response>
+            <response code="200">OK</response>
+        </member>
+    </members>
+</doc>
