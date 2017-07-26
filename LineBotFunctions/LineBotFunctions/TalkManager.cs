@@ -1,10 +1,12 @@
 ﻿using LineBotFunctions.BingoApi;
 using LineBotFunctions.Line.Messaging;
-using LineBotFunctions.TableStrage;
+using LineBotFunctions.CloudStorage;
 using Microsoft.Azure.WebJobs.Host;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using LineBotFunctions.Drawing;
+using System.Collections.Generic;
 
 namespace LineBotFunctions
 {
@@ -25,13 +27,15 @@ namespace LineBotFunctions
                 "ゲームを進めるには、なにかメッセージを送ってね。メッセージを送る度に番号を1つ引くよ。" + Environment.NewLine +
                 "ゲームを終了するには「終了」を送ってね。";
 
-        private BingoBotTableStrage _tableStrage;
+        private BingoBotTableStorage _tableStorage;
+        private BingoBotBlobStorage _blobStorage;
         private LineMessagingApi _messagingApi;
         private TraceWriter _log;
 
-        public TalkManager(BingoBotTableStrage tableStrage, LineMessagingApi messagingApi, TraceWriter log)
+        public TalkManager(BingoBotTableStorage tableStorage, BingoBotBlobStorage blobStrorage, LineMessagingApi messagingApi, TraceWriter log)
         {
-            _tableStrage = tableStrage;
+            _tableStorage = tableStorage;
+            _blobStorage = blobStrorage;
             _messagingApi = messagingApi;
             _log = log;
         }
@@ -76,8 +80,8 @@ namespace LineBotFunctions
 
         private async Task TalkAsync_impl(string replyToken, UserProfile user, string userMessage)
         {
-            var gameEntry = await _tableStrage.FindGameEntryAsync(user.UserId);
-            var cardEntry = await _tableStrage.FindCardEntryAsync(user.UserId);
+            var gameEntry = await _tableStorage.FindGameEntryAsync(user.UserId);
+            var cardEntry = await _tableStorage.FindCardEntryAsync(user.UserId);
 
             var noEntry = gameEntry == null && cardEntry == null;
             var gameUnregisterd = gameEntry != null && gameEntry.GameId < 0;
@@ -137,22 +141,42 @@ namespace LineBotFunctions
         {
             if (gameEntry != null)
             {
-                await _tableStrage.DeleteGameEntryAsync(gameEntry);
+                await _tableStorage.DeleteGameEntryAsync(gameEntry);
+                await DeleteCardsAsync(gameEntry);
+
                 using (var bingo = new BingoApiClient())
                 {
                     await bingo.DeleteGameAsync(gameEntry.GameId, gameEntry.AccessKey);
                 }
                 await _messagingApi.ReplyMessageAsync(replyToken,
                         new[] { new TextMessage($"ID:{gameEntry.GameId}のゲームと、ゲームの情報、参加者の情報を全て削除しました。") });
+
             }
             else if (cardEntry != null)
             {
-                await _tableStrage.DeleteCardEntryAsync(cardEntry);
-                await _tableStrage.DeleteCardUserAsync(cardEntry);
-
+                await DeleteCardStorageAsync(cardEntry);
                 await _messagingApi.ReplyMessageAsync(replyToken,
                     new[] { new TextMessage($"ID:{cardEntry.GameId}のゲームから抜けて、カードの情報を削除しました。") });
             }
+        }
+
+        private async Task DeleteCardsAsync(BingoEntry gameEntry)
+        {
+            var users = await _tableStorage.GetCardUsersAsync(gameEntry.GameId);
+            var tasks = users.Select(async usr =>
+            {
+                var cardEntry = await _tableStorage.FindCardEntryAsync(usr.UserId);
+                await DeleteCardStorageAsync(cardEntry);
+            });
+            await Task.WhenAll(tasks);
+        }
+
+        private async Task DeleteCardStorageAsync(BingoEntry cardEntry)
+        {
+            await _tableStorage.DeleteCardEntryAsync(cardEntry);
+            await _tableStorage.DeleteCardUserAsync(cardEntry);
+            await _blobStorage.DeleteImageAsync(cardEntry.CardId + ".JPG");
+            await _blobStorage.DeleteImageAsync(cardEntry.CardId + "_preview.JPG");
         }
 
         private async Task RegisterCardAsync(string replyToken, UserProfile user, string keyword, int gameId)
@@ -162,14 +186,16 @@ namespace LineBotFunctions
                 using (var bingoApi = new BingoApiClient())
                 {
                     var cardId = await bingoApi.AddCardAsync(gameId, keyword);
-                    await _tableStrage.UpdateCardEntryAsync(user.UserId, cardId, gameId);
-                    await _tableStrage.AddCardUserAsync(gameId, cardId, user.UserId, user.DisplayName);
+                    await _tableStorage.UpdateCardEntryAsync(user.UserId, cardId, gameId);
+                    await _tableStorage.AddCardUserAsync(gameId, cardId, user.UserId, user.DisplayName);
 
                     var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
-                    string replyMessage = CreateCardString(cardStatus);
-                    await _messagingApi.ReplyMessageAsync(replyToken, new[] {
+
+                    //string replyMessage = CreateCardString(cardStatus);
+                    var imageMessage = await CreateImageMessageAsync(cardStatus);
+                    await _messagingApi.ReplyMessageAsync(replyToken, new IMessage[] {
                         new TextMessage("カードを作成しました。"),
-                        new TextMessage(replyMessage)
+                        imageMessage
                     });
                 }
             }
@@ -179,21 +205,12 @@ namespace LineBotFunctions
             }
         }
 
-        private static string CreateCardString(CardStatus cardStatus)
+        private async Task<ImageMessage> CreateImageMessageAsync(CardStatus cardStatus)
         {
-            var cells = cardStatus.CardCells.Select(c => c.IsOpen ? "●" : c.Number.ToString("d2"));
-            var row1 = cells.Take(5);
-            var row2 = cells.Skip(5).Take(5);
-            var row3 = cells.Skip(10).Take(5);
-            var row4 = cells.Skip(15).Take(5);
-            var row5 = cells.Skip(20).Take(5);
-            var replyMessage =
-                string.Join(" ", row1) + Environment.NewLine +
-                string.Join(" ", row2) + Environment.NewLine +
-                string.Join(" ", row3) + Environment.NewLine +
-                string.Join(" ", row4) + Environment.NewLine +
-                string.Join(" ", row5);
-            return replyMessage;
+            var cardImage = new BingoCardImage((IList<CardCellStatus>)cardStatus.CardCells);
+            var imageUri = await _blobStorage.UploadImageAsync(cardImage.Image, cardStatus.CardId + ".JPG");
+            var previewUri = await _blobStorage.UploadImageAsync(cardImage.PreviewImage, cardStatus.CardId + "_preview.JPG");
+            return new ImageMessage(imageUri.ToString(), previewUri.ToString());
         }
 
         private async Task RunGameAsync(string replyToken, BingoEntry gameUser)
@@ -205,7 +222,7 @@ namespace LineBotFunctions
                     var status = await bingoApi.DrawNextNumber(gameUser.GameId, gameUser.AccessKey);
                     var drawNumber = status.DrawResults.Last();
 
-                    var cardUsers = await _tableStrage.GetCardUsersAsync(gameUser.GameId);
+                    var cardUsers = await _tableStorage.GetCardUsersAsync(gameUser.GameId);
 
                     var lizhiUser = status.LizhiCards
                         .Select(c => cardUsers.FirstOrDefault(cusr => cusr.RowKey == c.ToString())?.UserName + "さん リーチ！");
@@ -233,9 +250,9 @@ namespace LineBotFunctions
                 using (var bingoApi = new BingoApiClient())
                 {
                     var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
-                    var cardString = CreateCardString(cardStatus);
-                    await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(cardString) });
-
+                    //var cardString = CreateCardString(cardStatus);
+                    var imageMessage = await CreateImageMessageAsync(cardStatus);
+                    await _messagingApi.ReplyMessageAsync(replyToken, new[] { imageMessage });
                 }
             }
             catch (Exception e)
@@ -252,7 +269,7 @@ namespace LineBotFunctions
                 using (var bingoApi = new BingoApiClient())
                 {
                     var result = await bingoApi.CreateGameAsync(keyword);
-                    await _tableStrage.UpdateGameEntryAsync(userId, result.GameId, result.AccessKey);
+                    await _tableStorage.UpdateGameEntryAsync(userId, result.GameId, result.AccessKey);
 
                     var replyMessage = string.Format(ReplyMessage_GameEntry, result.GameId);
                     await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
@@ -274,12 +291,12 @@ namespace LineBotFunctions
                     case "0":
                     case "開始":
                         replyMessage = ReplyMessage_Start;
-                        await _tableStrage.AddGameEntryAsync(userId);
+                        await _tableStorage.AddGameEntryAsync(userId);
                         break;
                     case "1":
                     case "参加":
                         replyMessage = ReplyMessage_Join;
-                        await _tableStrage.AddCardEntryAsync(userId);
+                        await _tableStorage.AddCardEntryAsync(userId);
                         break;
                     default:
                         replyMessage = ReplyMessage_Usage;

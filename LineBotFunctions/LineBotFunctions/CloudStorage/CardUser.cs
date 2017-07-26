@@ -1,6 +1,6 @@
 ﻿using Microsoft.WindowsAzure.Storage.Table;
 
-namespace LineBotFunctions.TableStrage
+namespace LineBotFunctions.CloudStorage
 {
     public class CardUser : TableEntity
     {

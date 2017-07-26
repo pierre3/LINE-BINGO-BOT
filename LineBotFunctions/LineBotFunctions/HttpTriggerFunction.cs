@@ -1,5 +1,5 @@
 using LineBotFunctions.Line.Messaging;
-using LineBotFunctions.TableStrage;
+using LineBotFunctions.CloudStorage;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Azure.WebJobs.Host;
@@ -28,7 +28,7 @@ namespace LineBotFunctions
             {
                 var errorMessage = "Signature validation faild.";
                 log.Error(errorMessage);
-                return req.CreateResponse(HttpStatusCode.OK, new { Message = errorMessage });
+                return req.CreateResponse(HttpStatusCode.Forbidden, new { Message = errorMessage });
             }
 
             // Get text messages from web-hook request body.
@@ -37,9 +37,11 @@ namespace LineBotFunctions
             {
                 var user = await lineMessagingApi.GetUserProfile(msg.UserId);
 
-                var talkManager
-                    = new TalkManager(await BingoBotTableStrage.CreateAsync(ConfigurationManager.AppSettings["AzureWebJobsStorage"]),
-                    lineMessagingApi, log);
+                var connectionString = ConfigurationManager.AppSettings["AzureWebJobsStorage"];
+                var talkManager = new TalkManager(
+                        await BingoBotTableStorage.CreateAsync(connectionString),
+                        await BingoBotBlobStorage.CreateAsync(connectionString),
+                        lineMessagingApi, log);
 
                 await talkManager.TalkAsync(msg.ReplyToken, user, msg.Message);
 

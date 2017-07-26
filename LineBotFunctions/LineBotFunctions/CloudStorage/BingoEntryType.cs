@@ -1,4 +1,4 @@
-﻿namespace LineBotFunctions.TableStrage
+﻿namespace LineBotFunctions.CloudStorage
 {
     public enum BingoEntryType
     {

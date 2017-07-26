@@ -5,16 +5,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace LineBotFunctions.TableStrage
+namespace LineBotFunctions.CloudStorage
 {
 
-    public class BingoBotTableStrage
+    public class BingoBotTableStorage
     {
         private CloudTableClient _tableClient;
         private CloudTable _bingoEntries;
         private CloudTable _cardUsers;
 
-        public BingoBotTableStrage(string connectionString)
+        public BingoBotTableStorage(string connectionString)
         {
             var strageAccount = CloudStorageAccount.Parse(connectionString);
             _tableClient = strageAccount.CreateCloudTableClient();
@@ -28,9 +28,9 @@ namespace LineBotFunctions.TableStrage
             await _bingoEntries.CreateIfNotExistsAsync();
         }
 
-        public static async Task<BingoBotTableStrage> CreateAsync(string connectionString)
+        public static async Task<BingoBotTableStorage> CreateAsync(string connectionString)
         {
-            var result = new BingoBotTableStrage(connectionString);
+            var result = new BingoBotTableStorage(connectionString);
             await result.InitializeAsync();
             return result;
         }
@@ -60,7 +60,7 @@ namespace LineBotFunctions.TableStrage
             await _bingoEntries.ExecuteAsync(ope);
         }
 
-        public async Task UpdateCardEntryAsync(string userId, int cardId ,int gameId)
+        public async Task UpdateCardEntryAsync(string userId, int cardId, int gameId)
         {
             var cardEntry = await FindCardEntryAsync(userId);
             if (cardEntry == null) { return; }
@@ -141,16 +141,7 @@ namespace LineBotFunctions.TableStrage
         public async Task DeleteGameEntryAsync(BingoEntry gameEntry)
         {
             if (gameEntry == null) { throw new ArgumentNullException(nameof(gameEntry)); }
-
-            var users = await GetCardUsersAsync(gameEntry.GameId);
-            var tasks = users.Select(async usr =>
-                {
-                    var cardEntry = await FindCardEntryAsync(usr.UserId);
-                    await DeleteCardEntryAsync(cardEntry);
-                    await DeleteCardUserAsync(cardEntry);
-                });
-            await Task.WhenAll(tasks);
-
+            
             var ope = TableOperation.Delete(gameEntry);
             await _bingoEntries.ExecuteAsync(ope);
         }
