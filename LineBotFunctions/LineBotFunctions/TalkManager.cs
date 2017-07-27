@@ -126,6 +126,16 @@ namespace LineBotFunctions
 
             if (gameRegisterd)
             {
+                if (userMessage == "てすと")
+                {
+                    await NewEntryAsync(replyToken, user.UserId, "参加");
+                    return;
+                }
+                if (cardRegisterd && userMessage == "カード")
+                {
+                    await GetCardAsync(replyToken, cardEntry.CardId);
+                    return;
+                }
                 await RunGameAsync(replyToken, gameEntry);
                 return;
             }
