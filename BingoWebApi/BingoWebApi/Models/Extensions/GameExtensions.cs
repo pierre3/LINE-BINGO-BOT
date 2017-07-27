@@ -13,8 +13,7 @@ namespace BingoWebApi.Models
             {
                 return null;
             }
-            game.DrawCount++;
-            return game.DrawSource[game.DrawCount];
+            return game.DrawSource[game.DrawCount++];
         }
 
         public static GameStatus ToStatus(this Game game)
