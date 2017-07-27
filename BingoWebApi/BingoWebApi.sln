@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26430.14
+VisualStudioVersion = 15.0.26430.16
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BingoWebApi", "BingoWebApi\BingoWebApi.csproj", "{083F6DFF-164D-418C-AE09-BE5C10E9DF20}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BingoWebApiTest", "BingoWebApiTest\BingoWebApiTest.csproj", "{C3BF41E9-B414-46B5-AEEB-830B2AC7A768}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{083F6DFF-164D-418C-AE09-BE5C10E9DF20}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{083F6DFF-164D-418C-AE09-BE5C10E9DF20}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{083F6DFF-164D-418C-AE09-BE5C10E9DF20}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3BF41E9-B414-46B5-AEEB-830B2AC7A768}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3BF41E9-B414-46B5-AEEB-830B2AC7A768}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3BF41E9-B414-46B5-AEEB-830B2AC7A768}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3BF41E9-B414-46B5-AEEB-830B2AC7A768}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
