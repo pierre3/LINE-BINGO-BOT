@@ -91,6 +91,11 @@ namespace LineBotFunctions.CloudStorage
             await _cardUsers.ExecuteAsync(TableOperation.Insert(cardUser));
         }
 
+        public async Task UpdateCardUserAsync(CardUser cardUser)
+        {
+            await _cardUsers.ExecuteAsync(TableOperation.Replace(cardUser));
+        }
+
         public async Task<CardUser> FindCardUserAsync(int gameId, int cardId)
         {
             var ope = TableOperation.Retrieve<CardUser>(gameId.ToString(), cardId.ToString());
@@ -141,7 +146,7 @@ namespace LineBotFunctions.CloudStorage
         public async Task DeleteGameEntryAsync(BingoEntry gameEntry)
         {
             if (gameEntry == null) { throw new ArgumentNullException(nameof(gameEntry)); }
-            
+
             var ope = TableOperation.Delete(gameEntry);
             await _bingoEntries.ExecuteAsync(ope);
         }

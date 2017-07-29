@@ -89,7 +89,6 @@ namespace LineBotFunctions
             var gameRegisterd = gameEntry != null && gameEntry.GameId >= 0;
             var cardRegisterd = cardEntry != null && cardEntry.CardId >= 0;
 
-
             if (noEntry)
             {
                 await NewEntryAsync(replyToken, user.UserId, userMessage);
@@ -229,27 +228,61 @@ namespace LineBotFunctions
             {
                 using (var bingoApi = new BingoApiClient())
                 {
-                    var status = await bingoApi.DrawNextNumber(gameUser.GameId, gameUser.AccessKey);
-                    var drawNumber = status.DrawResults.Last();
+                    var gameStatus = await bingoApi.DrawNextNumber(gameUser.GameId, gameUser.AccessKey);
+                    var drawNumber = gameStatus.DrawResults.Last();
 
+                    //Get all card-statuses in this game from BINGO API.
+                    var tasks = gameStatus.Cards.Select(async cardId => await bingoApi.GetCardStatusAsync(cardId)).ToArray();
+                    var cardStatuses = await Task.WhenAll(tasks);
+
+                    //Get all card-users in this game from table storage.
                     var cardUsers = await _tableStorage.GetCardUsersAsync(gameUser.GameId);
 
-                    var lizhiUser = status.LizhiCards
-                        .Select(c => cardUsers.FirstOrDefault(cusr => cusr.RowKey == c.ToString())?.UserName + "さん リーチ！");
-                    var bingoUser = status.BingoCards
-                        .Select(c => cardUsers.FirstOrDefault(cusr => cusr.RowKey == c.ToString())?.UserName + "さん ビンゴ！");
+                    //Set bingo-line and lizhi-line counts from card-statuses to card-Users. 
+                    SetNextLineCount(cardStatuses, cardUsers);
 
-                    var messages = new[]{
-                        $"No. {drawNumber}!!"
-                    }.Concat(lizhiUser).Concat(bingoUser).Select(msg => new TextMessage(msg)).OfType<IMessage>().ToList();
+                    var lizhiMessages = cardUsers
+                        .Where(cusr => cusr.NextBingoLineCount == cusr.BingoLineCount)
+                        .Where(cusr => cusr.NextLizhiLineCount > cusr.LizhiLineCount)
+                        .Select(cusr => $"{cusr.UserName}さん リーチ{((cusr.NextLizhiLineCount > 1) ? "×" + cusr.NextLizhiLineCount : "")}!");
+                    var bingoMessages = cardUsers
+                        .Where(cusr => cusr.NextBingoLineCount > cusr.BingoLineCount)
+                        .Select(cusr => $"{cusr.UserName}さん ビンゴ{((cusr.NextBingoLineCount > 1) ? "×" + cusr.NextBingoLineCount : "")}!!");
+
+                    var messages = new[] { $"No. {drawNumber}!!" }
+                        .Concat(lizhiMessages)
+                        .Concat(bingoMessages)
+                        .Select(msg => new TextMessage(msg)).OfType<IMessage>().ToList();
 
                     await _messagingApi.ReplyMessageAsync(replyToken, messages);
                     await _messagingApi.MultiCastMessageAsync(cardUsers.Select(cusr => cusr.UserId).ToList(), messages);
+                    await UpdateCardUserLineCountAsync(cardUsers);
                 }
             }
             catch (Exception e)
             {
                 throw new RunGameException(e.Message, e);
+            }
+        }
+
+        private static void SetNextLineCount(IList<CardStatus> cardStatuses, IList<CardUser> cardUsers)
+        {
+            foreach (var cusr in cardUsers)
+            {
+                var cardState = cardStatuses.FirstOrDefault(cst => cst.CardId.ToString() == cusr.RowKey);
+                if (cardState == null) { continue; }
+                cusr.NextBingoLineCount = cardState.BingoLineCount;
+                cusr.NextLizhiLineCount = cardState.LizhiLineCount;
+            }
+        }
+
+        private async Task UpdateCardUserLineCountAsync(IList<CardUser> cardUsers)
+        {
+            foreach (var cardUser in cardUsers)
+            {
+                cardUser.BingoLineCount = cardUser.NextBingoLineCount;
+                cardUser.LizhiLineCount = cardUser.NextLizhiLineCount;
+                await _tableStorage.UpdateCardUserAsync(cardUser);
             }
         }
 
