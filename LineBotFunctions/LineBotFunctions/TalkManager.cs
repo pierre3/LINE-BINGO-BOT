@@ -1,17 +1,20 @@
 ﻿using LineBotFunctions.BingoApi;
-using LineBotFunctions.Line.Messaging;
 using LineBotFunctions.CloudStorage;
+using LineBotFunctions.Drawing;
+using LineBotFunctions.Line.Messaging;
 using Microsoft.Azure.WebJobs.Host;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using LineBotFunctions.Drawing;
-using System.Collections.Generic;
 
 namespace LineBotFunctions
 {
     public class TalkManager
     {
+        private static readonly string originalImageFormat = "{0}_{1}.JPG";
+        private static readonly string previewImageFormat = "{0}_{1}_preview.JPG";
+
         private static readonly string ReplyMessage_Start
             = "ゲームに参加するために必要な\"合言葉\"を設定できます。好きな言葉(20文字まで)を入力して送ってね。" + Environment.NewLine +
                             "設定しない場合は「なし」と入力してください。";
@@ -132,7 +135,7 @@ namespace LineBotFunctions
                 }
                 if (cardRegisterd && userMessage == "カード")
                 {
-                    await GetCardAsync(replyToken, cardEntry.CardId);
+                    await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
                     return;
                 }
                 await RunGameAsync(replyToken, gameEntry);
@@ -141,7 +144,7 @@ namespace LineBotFunctions
 
             if (cardRegisterd)
             {
-                await GetCardAsync(replyToken, cardEntry.CardId);
+                await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
                 return;
             }
         }
@@ -201,7 +204,7 @@ namespace LineBotFunctions
                     var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
 
                     //string replyMessage = CreateCardString(cardStatus);
-                    var imageMessage = await CreateImageMessageAsync(cardStatus);
+                    var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
                     await _messagingApi.ReplyMessageAsync(replyToken, new IMessage[] {
                         new TextMessage("カードを作成しました。"),
                         imageMessage
@@ -214,11 +217,15 @@ namespace LineBotFunctions
             }
         }
 
-        private async Task<ImageMessage> CreateImageMessageAsync(CardStatus cardStatus)
+        private async Task<ImageMessage> CreateImageMessageAsync(CardStatus cardStatus, int gameId, int cardId)
         {
+            var cardUser = await _tableStorage.FindCardUserAsync(gameId, cardId);
+            await DeletePastCardImageAsync(cardUser);
+
             var cardImage = new BingoCardImage((IList<CardCellStatus>)cardStatus.CardCells);
-            var imageUri = await _blobStorage.UploadImageAsync(cardImage.Image, cardStatus.CardId + ".JPG");
-            var previewUri = await _blobStorage.UploadImageAsync(cardImage.PreviewImage, cardStatus.CardId + "_preview.JPG");
+            var imageUri = await _blobStorage.UploadImageAsync(cardImage.Image, string.Format(originalImageFormat, cardStatus.CardId, cardUser.ImageNumber));
+            var previewUri = await _blobStorage.UploadImageAsync(cardImage.PreviewImage, string.Format(previewImageFormat, cardStatus.CardId, cardUser.ImageNumber));
+
             return new ImageMessage(imageUri.ToString(), previewUri.ToString());
         }
 
@@ -265,6 +272,14 @@ namespace LineBotFunctions
             }
         }
 
+        private async Task DeletePastCardImageAsync(CardUser cardUser)
+        {
+            await _blobStorage.DeleteImageAsync(string.Format(originalImageFormat, cardUser.RowKey, cardUser.ImageNumber));
+            await _blobStorage.DeleteImageAsync(string.Format(previewImageFormat, cardUser.RowKey, cardUser.ImageNumber));
+            cardUser.ImageNumber += 1;
+            await _tableStorage.UpdateCardUserAsync(cardUser);
+        }
+
         private static void SetNextLineCount(IList<CardStatus> cardStatuses, IList<CardUser> cardUsers)
         {
             foreach (var cusr in cardUsers)
@@ -286,7 +301,7 @@ namespace LineBotFunctions
             }
         }
 
-        private async Task GetCardAsync(string replyToken, int cardId)
+        private async Task GetCardAsync(string replyToken, int gameId, int cardId)
         {
             try
             {
@@ -294,7 +309,7 @@ namespace LineBotFunctions
                 {
                     var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
                     //var cardString = CreateCardString(cardStatus);
-                    var imageMessage = await CreateImageMessageAsync(cardStatus);
+                    var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
                     await _messagingApi.ReplyMessageAsync(replyToken, new[] { imageMessage });
                 }
             }

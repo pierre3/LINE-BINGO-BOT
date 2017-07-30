@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 
 namespace LineBotFunctions.CloudStorage
 {
-
     public class BingoBotBlobStorage
     {
         private CloudBlobClient _blobClient;
@@ -44,13 +43,12 @@ namespace LineBotFunctions.CloudStorage
                 return blob.Uri;
             }
         }
+
         public async Task DeleteImageAsync(string blobName)
         {
             var blob = _blobContainer.GetBlockBlobReference(blobName);
             await blob.DeleteIfExistsAsync();
         }
     }
-
-
 }
 

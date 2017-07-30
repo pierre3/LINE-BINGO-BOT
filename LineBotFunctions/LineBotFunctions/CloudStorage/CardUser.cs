@@ -10,6 +10,8 @@ namespace LineBotFunctions.CloudStorage
         public int BingoLineCount { get; set; } = 0;
         public int LizhiLineCount { get; set; } = 0;
 
+        public int ImageNumber { get; set; } = 1;
+
         [IgnoreProperty]
         public int NextBingoLineCount { get; set; } = 0;
         [IgnoreProperty]
