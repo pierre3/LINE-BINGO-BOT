@@ -49,6 +49,14 @@ namespace LineBotFunctions.CloudStorage
             return (BingoEntry)(retrieveResult.Result);
         }
 
+        public BingoEntry FindGameEntry(int gameId)
+        {
+            var query = new TableQuery<BingoEntry>()
+                .Where(TableQuery.GenerateFilterConditionForInt("GameId", QueryComparisons.Equal, gameId));
+            var result = _bingoEntries.ExecuteQuery(query);
+            return result.FirstOrDefault(entry => entry.PartitionKey == "Game");
+        }
+
         public async Task UpdateGameEntryAsync(string userId, int gameId, string accessKey)
         {
             var gameEntry = await FindGameEntryAsync(userId);

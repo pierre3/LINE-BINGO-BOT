@@ -44,7 +44,7 @@ namespace LineBotFunctions.Line.Messaging
         public async Task ReplyMessageAsync(string replyToken, IList<IMessage> messages)
         {
             var content = JsonConvert.SerializeObject(new { replyToken, messages });
-
+            
             using (var client = new HttpClient())
             {
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _channelAccessToken);

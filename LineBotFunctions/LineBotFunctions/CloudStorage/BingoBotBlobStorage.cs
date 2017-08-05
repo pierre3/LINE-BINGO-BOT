@@ -32,9 +32,10 @@ namespace LineBotFunctions.CloudStorage
                 new BlobContainerPermissions { PublicAccess = BlobContainerPublicAccessType.Blob });
         }
 
-        public async Task<Uri> UploadImageAsync(System.Drawing.Image image, string blobName)
+        public async Task<Uri> UploadImageAsync(System.Drawing.Image image,string directoryName, string blobName)
         {
-            var blob = _blobContainer.GetBlockBlobReference(blobName);
+            var directory = _blobContainer.GetDirectoryReference(directoryName);
+            var blob = directory.GetBlockBlobReference(blobName);
             using (var stream = new MemoryStream())
             {
                 image.Save(stream, System.Drawing.Imaging.ImageFormat.Jpeg);
@@ -44,10 +45,20 @@ namespace LineBotFunctions.CloudStorage
             }
         }
 
-        public async Task DeleteImageAsync(string blobName)
+        public async Task DeleteImageAsync(string directoryName, string blobName)
         {
-            var blob = _blobContainer.GetBlockBlobReference(blobName);
+            var directory = _blobContainer.GetDirectoryReference(directoryName);
+            var blob = directory.GetBlockBlobReference(blobName);
             await blob.DeleteIfExistsAsync();
+        }
+
+        public async Task DeleteDirectoryAsync(string directoryName)
+        {
+            var directory = _blobContainer.GetDirectoryReference(directoryName);
+            foreach(CloudBlob blob in directory.ListBlobs())
+            {
+                await blob.DeleteIfExistsAsync();
+            }
         }
     }
 }

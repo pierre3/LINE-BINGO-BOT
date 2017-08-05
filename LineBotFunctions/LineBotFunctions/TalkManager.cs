@@ -12,9 +12,6 @@ namespace LineBotFunctions
 {
     public class TalkManager
     {
-        private static readonly string originalImageFormat = "{0}_{1}.JPG";
-        private static readonly string previewImageFormat = "{0}_{1}_preview.JPG";
-
         private static readonly string ReplyMessage_Start
             = "ゲームに参加するために必要な\"合言葉\"を設定できます。好きな言葉(20文字まで)を入力して送ってね。" + Environment.NewLine +
                             "設定しない場合は「なし」と入力してください。";
@@ -23,12 +20,15 @@ namespace LineBotFunctions
                             "「123 あいことば」のように間に空白を入れて送ってね。" + Environment.NewLine +
                             "合言葉が決められていない場合は\"ID番号\"だけでいいよ。";
         private static readonly string ReplyMessage_Usage
-            = "新しいゲームを始めるには「0」または「開始」を、" + Environment.NewLine +
-                "ゲームに参加するには「1」または「参加」を返信してください。";
+            = "新しいゲームを始めるには[BINGO Menu]の「ゲームを開始する」をタップしてね。" + Environment.NewLine +
+                "ゲームに参加するには「ゲームに参加する」をタップだよ！";
         private static readonly string ReplyMessage_GameEntry
             = "ゲームを開始しました(ゲームＩＤ:{0})。" + Environment.NewLine +
-                "ゲームを進めるには、なにかメッセージを送ってね。メッセージを送る度に番号を1つ引くよ。" + Environment.NewLine +
-                "ゲームを終了するには「終了」を送ってね。";
+                "ゲームを進めるには、[BINGO Menu]の「番号を引く」をタップしてね。 " + Environment.NewLine +
+                "ゲームを終了するには「終了」と入力して送ってね。";
+        private static readonly string ReplyMessage_CardCreated
+            = "カードを作成したよ。" + Environment.NewLine +
+                "最新のカードを取得するには 、[BINGO Menu]の「カードを更新」をタップしてね。";
 
         private BingoBotTableStorage _tableStorage;
         private BingoBotBlobStorage _blobStorage;
@@ -138,15 +138,80 @@ namespace LineBotFunctions
                     await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
                     return;
                 }
-                await RunGameAsync(replyToken, gameEntry);
-                return;
+                if (userMessage == "ドロー")
+                {
+                    await RunGameAsync(replyToken, gameEntry);
+                    return;
+                }
             }
 
             if (cardRegisterd)
             {
-                await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
-                return;
+                if (userMessage == "カード")
+                {
+                    await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
+                    return;
+                }
             }
+
+            if (cardRegisterd || gameRegisterd)
+            {
+                var replyMessage = "";
+                switch (userMessage)
+                {
+
+                    case "開始":
+                        replyMessage = (gameEntry != null) ?
+                            "ゲーム進行中は新しいゲームを始められないよ！ ゲームを終了するには「終了」を入力して送ってね。" + Environment.NewLine
+                                + "ただし、終了したゲームを再開することはできないので注意してね！"
+                            : "ゲームに参加中は新しいゲームを始められないよ！ 現在のゲームから抜けるには「終了」を入力して送ってね。";
+                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        return;
+                    case "参加":
+                        replyMessage = (gameEntry != null) ?
+                            "ゲーム進行中は違うゲームに参加できないよ！ ゲームを終了するには「終了」を入力して送ってね。" + Environment.NewLine
+                            + "ただし、終了したゲームを再開することはできないので注意してね！。"
+                            : "ゲームに参加中は違うゲームに参加できないよ！ 現在のゲームから抜けるには「終了」を入力して送ってね。";
+                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        return;
+                    case "カード":
+                        replyMessage = "すみません。ゲームの進行役にはカードは配られません。";
+                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        return;
+                    case "ドロー":
+                        replyMessage = "番号を引けるのは、ゲームを作成した進行役だけだよ！";
+                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        return;
+                }
+                await BloadcastUserMessageAsync(user, userMessage, gameEntry, cardEntry);
+            }
+        }
+
+        private async Task BloadcastUserMessageAsync(UserProfile user, string userMessage, BingoEntry gameEntry, BingoEntry cardEntry)
+        {
+            BingoEntry bingoEntry;
+            string gameUserId;
+            if (cardEntry != null)
+            {
+                gameUserId = _tableStorage.FindGameEntry(cardEntry.GameId)?.RowKey;
+                bingoEntry = cardEntry;
+            }
+            else
+            {
+                bingoEntry = gameEntry;
+                gameUserId = gameEntry.RowKey;
+            }
+
+            var cardUsers = await _tableStorage.GetCardUsersAsync(bingoEntry.GameId);
+            var to = cardUsers
+                .Select(u => u.UserId)
+                .Concat(new[] { gameUserId })
+                .Where(u => u != user.UserId).ToArray();
+            await _messagingApi.MultiCastMessageAsync(to,
+                new[]
+                {
+                        new TextMessage("@"+ user.DisplayName + Environment.NewLine + userMessage)
+                });
         }
 
         private async Task DeleteBingoEntry(string replyToken, BingoEntry gameEntry, BingoEntry cardEntry)
@@ -187,8 +252,7 @@ namespace LineBotFunctions
         {
             await _tableStorage.DeleteCardEntryAsync(cardEntry);
             await _tableStorage.DeleteCardUserAsync(cardEntry);
-            await _blobStorage.DeleteImageAsync(cardEntry.CardId + ".JPG");
-            await _blobStorage.DeleteImageAsync(cardEntry.CardId + "_preview.JPG");
+            await _blobStorage.DeleteDirectoryAsync(cardEntry.CardId.ToString());
         }
 
         private async Task RegisterCardAsync(string replyToken, UserProfile user, string keyword, int gameId)
@@ -206,10 +270,17 @@ namespace LineBotFunctions
                     //string replyMessage = CreateCardString(cardStatus);
                     var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
                     await _messagingApi.ReplyMessageAsync(replyToken, new IMessage[] {
-                        new TextMessage("カードを作成しました。"),
+                        new TextMessage(ReplyMessage_CardCreated),
                         imageMessage
                     });
                 }
+
+                var cardUsers = await _tableStorage.GetCardUsersAsync(gameId);
+                var gameUser = _tableStorage.FindGameEntry(gameId)?.RowKey;
+                var to = cardUsers.Where(cusr => cusr.UserId != user.UserId).Select(cusr => cusr.UserId).Concat(new[] { gameUser }).ToArray();
+                await _messagingApi.MultiCastMessageAsync(to,
+                    new[] { new TextMessage($"{user.DisplayName} さんがエントリーしました！") });
+
             }
             catch (Exception e)
             {
@@ -220,11 +291,11 @@ namespace LineBotFunctions
         private async Task<ImageMessage> CreateImageMessageAsync(CardStatus cardStatus, int gameId, int cardId)
         {
             var cardUser = await _tableStorage.FindCardUserAsync(gameId, cardId);
-            await DeletePastCardImageAsync(cardUser);
+            await UpdateImageNumberAsync(cardUser);
 
             var cardImage = new BingoCardImage((IList<CardCellStatus>)cardStatus.CardCells);
-            var imageUri = await _blobStorage.UploadImageAsync(cardImage.Image, string.Format(originalImageFormat, cardStatus.CardId, cardUser.ImageNumber));
-            var previewUri = await _blobStorage.UploadImageAsync(cardImage.PreviewImage, string.Format(previewImageFormat, cardStatus.CardId, cardUser.ImageNumber));
+            var imageUri = await _blobStorage.UploadImageAsync(cardImage.Image, cardStatus.CardId.ToString(), cardUser.ImageNumber + ".jpg");
+            var previewUri = await _blobStorage.UploadImageAsync(cardImage.PreviewImage, cardStatus.CardId.ToString(), cardUser.ImageNumber + "_preview.jpg");
 
             return new ImageMessage(imageUri.ToString(), previewUri.ToString());
         }
@@ -272,11 +343,14 @@ namespace LineBotFunctions
             }
         }
 
-        private async Task DeletePastCardImageAsync(CardUser cardUser)
+        private async Task UpdateImageNumberAsync(CardUser cardUser)
         {
-            await _blobStorage.DeleteImageAsync(string.Format(originalImageFormat, cardUser.RowKey, cardUser.ImageNumber));
-            await _blobStorage.DeleteImageAsync(string.Format(previewImageFormat, cardUser.RowKey, cardUser.ImageNumber));
             cardUser.ImageNumber += 1;
+            if (cardUser.ImageNumber > 10)
+            {
+                await _blobStorage.DeleteImageAsync(cardUser.RowKey, (cardUser.ImageNumber - 10) + ".jpg");
+                await _blobStorage.DeleteImageAsync(cardUser.RowKey, (cardUser.ImageNumber - 10) + "_preview.jpg");
+            }
             await _tableStorage.UpdateCardUserAsync(cardUser);
         }
 
@@ -346,12 +420,10 @@ namespace LineBotFunctions
             {
                 switch (userMessage)
                 {
-                    case "0":
                     case "開始":
                         replyMessage = ReplyMessage_Start;
                         await _tableStorage.AddGameEntryAsync(userId);
                         break;
-                    case "1":
                     case "参加":
                         replyMessage = ReplyMessage_Join;
                         await _tableStorage.AddCardEntryAsync(userId);
