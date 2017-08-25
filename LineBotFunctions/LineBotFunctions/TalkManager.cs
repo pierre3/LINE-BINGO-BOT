@@ -1,7 +1,7 @@
-﻿using LineBotFunctions.BingoApi;
+﻿using Line.Messaging;
+using LineBotFunctions.BingoApi;
 using LineBotFunctions.CloudStorage;
 using LineBotFunctions.Drawing;
-using LineBotFunctions.Line.Messaging;
 using Microsoft.Azure.WebJobs.Host;
 using System;
 using System.Collections.Generic;
@@ -32,14 +32,14 @@ namespace LineBotFunctions
 
         private BingoBotTableStorage _tableStorage;
         private BingoBotBlobStorage _blobStorage;
-        private LineMessagingApi _messagingApi;
+        private LineMessagingClient _messagingClient;
         private TraceWriter _log;
 
-        public TalkManager(BingoBotTableStorage tableStorage, BingoBotBlobStorage blobStrorage, LineMessagingApi messagingApi, TraceWriter log)
+        public TalkManager(BingoBotTableStorage tableStorage, BingoBotBlobStorage blobStrorage, LineMessagingClient messagingClient, TraceWriter log)
         {
             _tableStorage = tableStorage;
             _blobStorage = blobStrorage;
-            _messagingApi = messagingApi;
+            _messagingClient = messagingClient;
             _log = log;
         }
 
@@ -53,31 +53,31 @@ namespace LineBotFunctions
             {
                 _log.Error("NewEntryAsync method has failed.", ex);
                 var replyMessage = "ごめんなさい。ゲームの開始または参加に失敗しました。";
-                await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
             }
             catch (RegisterGameException ex)
             {
                 _log.Error("RegisterGameAsync method has failed.", ex);
                 var replyMessage = "ごめんなさい。ゲームの作成に失敗しました。";
-                await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
             }
             catch (RegisterCardException ex)
             {
                 _log.Error("RegisterCardAsync method has failed.", ex);
                 var replyMessage = "ごめんなさい。カードの作成に失敗しました。";
-                await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
             }
             catch (RunGameException ex)
             {
                 _log.Error("RunGameAsync method has failed.", ex);
                 var replyMessage = "ごめんなさい。ゲーム中にエラーが発生しました。";
-                await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
             }
             catch (GetCardException ex)
             {
                 _log.Error("GetCardAsync method has failed.", ex);
                 var replyMessage = "ごめんなさい。カード情報の取得に失敗しました。";
-                await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
             }
         }
 
@@ -121,7 +121,7 @@ namespace LineBotFunctions
                 }
                 else
                 {
-                    await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(ReplyMessage_Join) });
+                    await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(ReplyMessage_Join) });
                 }
                 return;
             }
@@ -165,22 +165,22 @@ namespace LineBotFunctions
                             "ゲーム進行中は新しいゲームを始められないよ！ ゲームを終了するには「終了」を入力して送ってね。" + Environment.NewLine
                                 + "ただし、終了したゲームを再開することはできないので注意してね！"
                             : "ゲームに参加中は新しいゲームを始められないよ！ 現在のゲームから抜けるには「終了」を入力して送ってね。";
-                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
                         return;
                     case "参加":
                         replyMessage = (gameEntry != null) ?
                             "ゲーム進行中は違うゲームに参加できないよ！ ゲームを終了するには「終了」を入力して送ってね。" + Environment.NewLine
                             + "ただし、終了したゲームを再開することはできないので注意してね！。"
                             : "ゲームに参加中は違うゲームに参加できないよ！ 現在のゲームから抜けるには「終了」を入力して送ってね。";
-                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
                         return;
                     case "カード":
                         replyMessage = "すみません。ゲームの進行役にはカードは配られません。";
-                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
                         return;
                     case "ドロー":
                         replyMessage = "番号を引けるのは、ゲームを作成した進行役だけだよ！";
-                        await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                        await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
                         return;
                 }
                 await BloadcastUserMessageAsync(user, userMessage, gameEntry, cardEntry);
@@ -207,7 +207,7 @@ namespace LineBotFunctions
                 .Select(u => u.UserId)
                 .Concat(new[] { gameUserId })
                 .Where(u => u != user.UserId).ToArray();
-            await _messagingApi.MultiCastMessageAsync(to,
+            await _messagingClient.MultiCastMessageAsync(to,
                 new[]
                 {
                         new TextMessage("@"+ user.DisplayName + Environment.NewLine + userMessage)
@@ -225,14 +225,14 @@ namespace LineBotFunctions
                 {
                     await bingo.DeleteGameAsync(gameEntry.GameId, gameEntry.AccessKey);
                 }
-                await _messagingApi.ReplyMessageAsync(replyToken,
+                await _messagingClient.ReplyMessageAsync(replyToken,
                         new[] { new TextMessage($"ID:{gameEntry.GameId}のゲームと、ゲームの情報、参加者の情報を全て削除しました。") });
 
             }
             else if (cardEntry != null)
             {
                 await DeleteCardStorageAsync(cardEntry);
-                await _messagingApi.ReplyMessageAsync(replyToken,
+                await _messagingClient.ReplyMessageAsync(replyToken,
                     new[] { new TextMessage($"ID:{cardEntry.GameId}のゲームから抜けて、カードの情報を削除しました。") });
             }
         }
@@ -269,7 +269,7 @@ namespace LineBotFunctions
 
                     //string replyMessage = CreateCardString(cardStatus);
                     var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
-                    await _messagingApi.ReplyMessageAsync(replyToken, new IMessage[] {
+                    await _messagingClient.ReplyMessageAsync(replyToken, new ISendMessage[] {
                         new TextMessage(ReplyMessage_CardCreated),
                         imageMessage
                     });
@@ -278,7 +278,7 @@ namespace LineBotFunctions
                 var cardUsers = await _tableStorage.GetCardUsersAsync(gameId);
                 var gameUser = _tableStorage.FindGameEntry(gameId)?.RowKey;
                 var to = cardUsers.Where(cusr => cusr.UserId != user.UserId).Select(cusr => cusr.UserId).Concat(new[] { gameUser }).ToArray();
-                await _messagingApi.MultiCastMessageAsync(to,
+                await _messagingClient.MultiCastMessageAsync(to,
                     new[] { new TextMessage($"{user.DisplayName} さんがエントリーしました！") });
 
             }
@@ -330,10 +330,10 @@ namespace LineBotFunctions
                     var messages = new[] { $"No. {drawNumber}!!" }
                         .Concat(lizhiMessages)
                         .Concat(bingoMessages)
-                        .Select(msg => new TextMessage(msg)).OfType<IMessage>().ToList();
+                        .Select(msg => new TextMessage(msg)).OfType<ISendMessage>().ToList();
 
-                    await _messagingApi.ReplyMessageAsync(replyToken, messages);
-                    await _messagingApi.MultiCastMessageAsync(cardUsers.Select(cusr => cusr.UserId).ToList(), messages);
+                    await _messagingClient.ReplyMessageAsync(replyToken, messages);
+                    await _messagingClient.MultiCastMessageAsync(cardUsers.Select(cusr => cusr.UserId).ToList(), messages);
                     await UpdateCardUserLineCountAsync(cardUsers);
                 }
             }
@@ -384,7 +384,7 @@ namespace LineBotFunctions
                     var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
                     //var cardString = CreateCardString(cardStatus);
                     var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
-                    await _messagingApi.ReplyMessageAsync(replyToken, new[] { imageMessage });
+                    await _messagingClient.ReplyMessageAsync(replyToken, new[] { imageMessage });
                 }
             }
             catch (Exception e)
@@ -404,7 +404,7 @@ namespace LineBotFunctions
                     await _tableStorage.UpdateGameEntryAsync(userId, result.GameId, result.AccessKey);
 
                     var replyMessage = string.Format(ReplyMessage_GameEntry, result.GameId);
-                    await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                    await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
                 }
             }
             catch (Exception e)
@@ -432,7 +432,7 @@ namespace LineBotFunctions
                         replyMessage = ReplyMessage_Usage;
                         break;
                 }
-                await _messagingApi.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
             }
             catch (Exception e)
             {
