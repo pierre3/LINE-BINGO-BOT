@@ -6,13 +6,42 @@
     <OutputPath>bin\debug\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Line.Messaging" Version="0.2.0-alpha" />
+    <None Remove="Resources\menu_card.png" />
+    <None Remove="Resources\menu_game.png" />
+    <None Remove="Resources\menu_start.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Resources\menu_card.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\menu_game.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\menu_start.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Line.Messaging" Version="1.0.1" />
     <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="1.0.2" />
     <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.4.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Update="host.json">

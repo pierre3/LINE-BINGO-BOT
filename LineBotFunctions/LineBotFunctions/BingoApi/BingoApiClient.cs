@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -9,10 +10,19 @@ namespace LineBotFunctions.BingoApi
 
     public class BingoApiClient : IDisposable
     {
-        private HttpClient _client;
+        private static HttpClient _client;
+
+        public static BingoApiClient Default = new BingoApiClient(60 * 1000);
+
         public BingoApiClient()
         {
             _client = new HttpClient();
+        }
+
+        public BingoApiClient(int connectionLeaseTimeout) : this()
+        {
+            var sp = ServicePointManager.FindServicePoint(new Uri("http://bingowebapi.azurewebsites.net"));
+            sp.ConnectionLeaseTimeout = 60 * 1000;
         }
 
         public async Task<NewGameResult> CreateGameAsync(string keyword)

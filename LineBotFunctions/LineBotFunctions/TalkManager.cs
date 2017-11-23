@@ -1,39 +1,51 @@
 ﻿using Line.Messaging;
+using Line.Messaging.Webhooks;
 using LineBotFunctions.BingoApi;
 using LineBotFunctions.CloudStorage;
 using LineBotFunctions.Drawing;
 using Microsoft.Azure.WebJobs.Host;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace LineBotFunctions
 {
-    public class TalkManager
+    public class TalkManager : WebhookApplication
     {
         private static readonly string ReplyMessage_Start
             = "ゲームに参加するために必要な\"合言葉\"を設定できます。好きな言葉(20文字まで)を入力して送ってね。" + Environment.NewLine +
                             "設定しない場合は「なし」と入力してください。";
+
         private static readonly string ReplyMessage_Join
             = "参加するゲームの\"ID番号\"と\"合言葉\"を入力してください。" +
-                            "「123 あいことば」のように間に空白を入れて送ってね。" + Environment.NewLine +
-                            "合言葉が決められていない場合は\"ID番号\"だけでいいよ。";
+                "「123 あいことば」のように間に空白を入れて送ってね。" + Environment.NewLine +
+                "合言葉が決められていない場合は\"ID番号\"だけでいいよ。";
+
         private static readonly string ReplyMessage_Usage
-            = "新しいゲームを始めるには[BINGO Menu]の「ゲームを開始する」をタップしてね。" + Environment.NewLine +
+            = "新しいゲームを始めるには「ゲームを開始する」をタップしてね。" + Environment.NewLine +
                 "ゲームに参加するには「ゲームに参加する」をタップだよ！";
+
         private static readonly string ReplyMessage_GameEntry
-            = "ゲームを開始しました(ゲームＩＤ:{0})。" + Environment.NewLine +
-                "ゲームを進めるには、[BINGO Menu]の「番号を引く」をタップしてね。 " + Environment.NewLine +
-                "ゲームを終了するには「終了」と入力して送ってね。";
+            = "ゲームを開始しました(ゲームＩＤ:{0})。" + Environment.NewLine + Help_GameEntry;
+                
         private static readonly string ReplyMessage_CardCreated
-            = "カードを作成したよ。" + Environment.NewLine +
-                "最新のカードを取得するには 、[BINGO Menu]の「カードを更新」をタップしてね。";
+            = "カードを作成したよ。" + Environment.NewLine + Help_CardCreated;
+
+        private static readonly string Help_GameEntry
+            = "ゲームを進めるには、「番号を引く」をタップしてね。 " + Environment.NewLine +
+                "ゲームを終了するには「ゲームを終了する」をタップしてね。";
+
+        private static readonly string Help_CardCreated
+            = "最新のカードを取得するには 、「カードを更新」をタップしてね。";
 
         private BingoBotTableStorage _tableStorage;
         private BingoBotBlobStorage _blobStorage;
         private LineMessagingClient _messagingClient;
         private TraceWriter _log;
+
+        private BingoApiClient _bingoClient = BingoApiClient.Default;
 
         public TalkManager(BingoBotTableStorage tableStorage, BingoBotBlobStorage blobStrorage, LineMessagingClient messagingClient, TraceWriter log)
         {
@@ -43,7 +55,79 @@ namespace LineBotFunctions
             _log = log;
         }
 
-        public async Task TalkAsync(string replyToken, UserProfile user, string userMessage)
+        protected override async Task OnMessageAsync(MessageEvent ev)
+        {
+            var textMessage = (ev.Message as TextEventMessage);
+            if (textMessage == null)
+            {
+                return;
+            }
+
+            if (textMessage.Text == "RegisterMenu")
+            {
+                var debugUser = ConfigurationManager.AppSettings["DebugUser"];
+                if (debugUser != null && debugUser == ev.Source.UserId)
+                {
+                    var menuManager = new BingoMenuManager(_messagingClient);
+                    await menuManager.RegisterBingoMenuAsync();
+                    await _messagingClient.ReplyMessageAsync(ev.ReplyToken, "Registerd Bingo Menus.");
+                    return;
+                }
+            }
+            var user = await _messagingClient.GetUserProfileAsync(ev.Source.UserId);
+            await TalkAsync(ev.ReplyToken, user, textMessage.Text);
+        }
+
+        protected override async Task OnFollowAsync(FollowEvent ev)
+        {
+            if(ev.Source.Type != EventSourceType.User) { return; }
+            await _messagingClient.ReplyMessageAsync(ev.ReplyToken, "友達登録ありがとう！", ReplyMessage_Usage);
+            await new BingoMenuManager(_messagingClient).SetStartMenuAsync(ev.Source.Id);
+        }
+
+        protected override async Task OnPostbackAsync(PostbackEvent ev)
+        {
+            var userId = ev.Source.UserId;
+            var gameEntry = await _tableStorage.FindGameEntryAsync(userId);
+            var cardEntry = await _tableStorage.FindCardEntryAsync(userId);
+            var replyToken = ev.ReplyToken;
+
+            switch (ev.Postback.Data)
+            {
+                case "exit":
+                    await DeleteBingoEntry(replyToken, gameEntry, cardEntry);
+                    await new BingoMenuManager(_messagingClient).SetStartMenuAsync(userId);
+                    break;
+                case "cancel-exit":
+                    await _messagingClient.ReplyMessageAsync(replyToken, "キャンセルしました。");
+                    break;
+                case BingoMenuManager.POSTBACK_DATA_START_MENU_HINT:
+                    await _messagingClient.ReplyMessageAsync(replyToken, ReplyMessage_Usage);
+                    break;
+                case BingoMenuManager.POSTBACK_DATA_GAME_MENU_HINT:
+                    if (gameEntry?.GameId < 0)
+                    {
+                        await _messagingClient.ReplyMessageAsync(replyToken, ReplyMessage_Start);
+                    }
+                    else
+                    {
+                        await _messagingClient.ReplyMessageAsync(replyToken, Help_GameEntry);
+                    }
+                    break;
+                case BingoMenuManager.POSTBACK_DATA_CARD_MENU_HINT:
+                    if (cardEntry?.CardId < 0)
+                    {
+                        await _messagingClient.ReplyMessageAsync(replyToken, ReplyMessage_Join);
+                    }
+                    else
+                    {
+                        await _messagingClient.ReplyMessageAsync(replyToken, Help_CardCreated);
+                    }
+                    break;
+            }
+        }
+
+        private async Task TalkAsync(string replyToken, UserProfile user, string userMessage)
         {
             try
             {
@@ -100,7 +184,14 @@ namespace LineBotFunctions
 
             if (userMessage == "終了")
             {
-                await DeleteBingoEntry(replyToken, gameEntry, cardEntry);
+                await _messagingClient.ReplyMessageAsync(replyToken, new[]
+                {
+                    new TemplateMessage("confirm exit", new ConfirmTemplate("一度終了したゲームは再開できません。ゲームを終了しますか？",
+                        new []{
+                            new PostbackTemplateAction("はい","exit"),
+                            new PostbackTemplateAction("キャンセル","cancel-exit")
+                        }))
+                });
                 return;
             }
 
@@ -126,32 +217,16 @@ namespace LineBotFunctions
                 return;
             }
 
-            if (gameRegisterd)
+            if (gameRegisterd && userMessage == "ドロー")
             {
-                if (userMessage == "てすと")
-                {
-                    await NewEntryAsync(replyToken, user.UserId, "参加");
-                    return;
-                }
-                if (cardRegisterd && userMessage == "カード")
-                {
-                    await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
-                    return;
-                }
-                if (userMessage == "ドロー")
-                {
-                    await RunGameAsync(replyToken, gameEntry);
-                    return;
-                }
+                await RunGameAsync(replyToken, gameEntry);
+                return;
             }
 
-            if (cardRegisterd)
+            if (cardRegisterd && userMessage == "カード")
             {
-                if (userMessage == "カード")
-                {
-                    await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
-                    return;
-                }
+                await GetCardAsync(replyToken, cardEntry.GameId, cardEntry.CardId);
+                return;
             }
 
             if (cardRegisterd || gameRegisterd)
@@ -221,20 +296,33 @@ namespace LineBotFunctions
                 await _tableStorage.DeleteGameEntryAsync(gameEntry);
                 await DeleteCardsAsync(gameEntry);
 
-                using (var bingo = new BingoApiClient())
+                await _bingoClient.DeleteGameAsync(gameEntry.GameId, gameEntry.AccessKey);
+                if (gameEntry.GameId < 0)
                 {
-                    await bingo.DeleteGameAsync(gameEntry.GameId, gameEntry.AccessKey);
+                    await _messagingClient.ReplyMessageAsync(replyToken,
+                         "ゲームを終了しました。");
                 }
-                await _messagingClient.ReplyMessageAsync(replyToken,
-                        new[] { new TextMessage($"ID:{gameEntry.GameId}のゲームと、ゲームの情報、参加者の情報を全て削除しました。") });
-
+                else
+                {
+                    await _messagingClient.ReplyMessageAsync(replyToken,
+                          $"ID:{gameEntry.GameId}のゲームと、ゲームの情報、参加者の情報を全て削除しました。");
+                }
             }
             else if (cardEntry != null)
             {
                 await DeleteCardStorageAsync(cardEntry);
-                await _messagingClient.ReplyMessageAsync(replyToken,
-                    new[] { new TextMessage($"ID:{cardEntry.GameId}のゲームから抜けて、カードの情報を削除しました。") });
+                if (cardEntry.CardId < 0)
+                {
+                    await _messagingClient.ReplyMessageAsync(replyToken,
+                        "ゲームへの参加をやめました。");
+                }
+                else
+                {
+                    await _messagingClient.ReplyMessageAsync(replyToken,
+                        $"ID:{cardEntry.GameId}のゲームから抜けて、カードの情報を削除しました。");
+                }
             }
+
         }
 
         private async Task DeleteCardsAsync(BingoEntry gameEntry)
@@ -259,21 +347,19 @@ namespace LineBotFunctions
         {
             try
             {
-                using (var bingoApi = new BingoApiClient())
-                {
-                    var cardId = await bingoApi.AddCardAsync(gameId, keyword);
-                    await _tableStorage.UpdateCardEntryAsync(user.UserId, cardId, gameId);
-                    await _tableStorage.AddCardUserAsync(gameId, cardId, user.UserId, user.DisplayName);
 
-                    var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
+                var cardId = await _bingoClient.AddCardAsync(gameId, keyword);
+                await _tableStorage.UpdateCardEntryAsync(user.UserId, cardId, gameId);
+                await _tableStorage.AddCardUserAsync(gameId, cardId, user.UserId, user.DisplayName);
 
-                    //string replyMessage = CreateCardString(cardStatus);
-                    var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
-                    await _messagingClient.ReplyMessageAsync(replyToken, new ISendMessage[] {
-                        new TextMessage(ReplyMessage_CardCreated),
-                        imageMessage
-                    });
-                }
+                var cardStatus = await _bingoClient.GetCardStatusAsync(cardId);
+
+                //string replyMessage = CreateCardString(cardStatus);
+                var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
+                await _messagingClient.ReplyMessageAsync(replyToken, new ISendMessage[] {
+                    new TextMessage(ReplyMessage_CardCreated),
+                    imageMessage
+                 });
 
                 var cardUsers = await _tableStorage.GetCardUsersAsync(gameId);
                 var gameUser = _tableStorage.FindGameEntry(gameId)?.RowKey;
@@ -284,7 +370,7 @@ namespace LineBotFunctions
             }
             catch (Exception e)
             {
-                throw new RegisterGameException(e.Message, e);
+                throw new RegisterCardException(e.Message, e);
             }
         }
 
@@ -304,38 +390,35 @@ namespace LineBotFunctions
         {
             try
             {
-                using (var bingoApi = new BingoApiClient())
-                {
-                    var gameStatus = await bingoApi.DrawNextNumber(gameUser.GameId, gameUser.AccessKey);
-                    var drawNumber = gameStatus.DrawResults.Last();
+                var gameStatus = await _bingoClient.DrawNextNumber(gameUser.GameId, gameUser.AccessKey);
+                var drawNumber = gameStatus.DrawResults.Last();
 
-                    //Get all card-statuses in this game from BINGO API.
-                    var tasks = gameStatus.Cards.Select(async cardId => await bingoApi.GetCardStatusAsync(cardId)).ToArray();
-                    var cardStatuses = await Task.WhenAll(tasks);
+                //Get all card-statuses in this game from BINGO API.
+                var tasks = gameStatus.Cards.Select(async cardId => await _bingoClient.GetCardStatusAsync(cardId)).ToArray();
+                var cardStatuses = await Task.WhenAll(tasks);
 
-                    //Get all card-users in this game from table storage.
-                    var cardUsers = await _tableStorage.GetCardUsersAsync(gameUser.GameId);
+                //Get all card-users in this game from table storage.
+                var cardUsers = await _tableStorage.GetCardUsersAsync(gameUser.GameId);
 
-                    //Set bingo-line and lizhi-line counts from card-statuses to card-Users. 
-                    SetNextLineCount(cardStatuses, cardUsers);
+                //Set bingo-line and lizhi-line counts from card-statuses to card-Users. 
+                SetNextLineCount(cardStatuses, cardUsers);
 
-                    var lizhiMessages = cardUsers
-                        .Where(cusr => cusr.NextBingoLineCount == cusr.BingoLineCount)
-                        .Where(cusr => cusr.NextLizhiLineCount > cusr.LizhiLineCount)
-                        .Select(cusr => $"{cusr.UserName}さん リーチ{((cusr.NextLizhiLineCount > 1) ? "×" + cusr.NextLizhiLineCount : "")}!");
-                    var bingoMessages = cardUsers
-                        .Where(cusr => cusr.NextBingoLineCount > cusr.BingoLineCount)
-                        .Select(cusr => $"{cusr.UserName}さん ビンゴ{((cusr.NextBingoLineCount > 1) ? "×" + cusr.NextBingoLineCount : "")}!!");
+                var lizhiMessages = cardUsers
+                    .Where(cusr => cusr.NextBingoLineCount == cusr.BingoLineCount)
+                    .Where(cusr => cusr.NextLizhiLineCount > cusr.LizhiLineCount)
+                    .Select(cusr => $"{cusr.UserName}さん リーチ{((cusr.NextLizhiLineCount > 1) ? "×" + cusr.NextLizhiLineCount : "")}!");
+                var bingoMessages = cardUsers
+                    .Where(cusr => cusr.NextBingoLineCount > cusr.BingoLineCount)
+                    .Select(cusr => $"{cusr.UserName}さん ビンゴ{((cusr.NextBingoLineCount > 1) ? "×" + cusr.NextBingoLineCount : "")}!!");
 
-                    var messages = new[] { $"No. {drawNumber}!!" }
-                        .Concat(lizhiMessages)
-                        .Concat(bingoMessages)
-                        .Select(msg => new TextMessage(msg)).OfType<ISendMessage>().ToList();
+                var messages = new[] { $"No. {drawNumber}!!" }
+                    .Concat(lizhiMessages)
+                    .Concat(bingoMessages)
+                    .Select(msg => new TextMessage(msg)).OfType<ISendMessage>().ToList();
 
-                    await _messagingClient.ReplyMessageAsync(replyToken, messages);
-                    await _messagingClient.MultiCastMessageAsync(cardUsers.Select(cusr => cusr.UserId).ToList(), messages);
-                    await UpdateCardUserLineCountAsync(cardUsers);
-                }
+                await _messagingClient.ReplyMessageAsync(replyToken, messages);
+                await _messagingClient.MultiCastMessageAsync(cardUsers.Select(cusr => cusr.UserId).ToList(), messages);
+                await UpdateCardUserLineCountAsync(cardUsers);
             }
             catch (Exception e)
             {
@@ -379,13 +462,10 @@ namespace LineBotFunctions
         {
             try
             {
-                using (var bingoApi = new BingoApiClient())
-                {
-                    var cardStatus = await bingoApi.GetCardStatusAsync(cardId);
-                    //var cardString = CreateCardString(cardStatus);
-                    var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
-                    await _messagingClient.ReplyMessageAsync(replyToken, new[] { imageMessage });
-                }
+                var cardStatus = await _bingoClient.GetCardStatusAsync(cardId);
+                //var cardString = CreateCardString(cardStatus);
+                var imageMessage = await CreateImageMessageAsync(cardStatus, gameId, cardId);
+                await _messagingClient.ReplyMessageAsync(replyToken, new[] { imageMessage });
             }
             catch (Exception e)
             {
@@ -397,14 +477,24 @@ namespace LineBotFunctions
         {
             try
             {
-                var keyword = (userMessage == "なし") ? "" : userMessage.Substring(0, Math.Min(userMessage.Length, 20));
-                using (var bingoApi = new BingoApiClient())
+                if (userMessage == "ドロー")
                 {
-                    var result = await bingoApi.CreateGameAsync(keyword);
-                    await _tableStorage.UpdateGameEntryAsync(userId, result.GameId, result.AccessKey);
+                    await _messagingClient.ReplyMessageAsync(replyToken, "合言葉を入力してください。");
+                    return;
+                }
+                var keyword = (userMessage == "なし") ? "" : userMessage.Substring(0, Math.Min(userMessage.Length, 20));
 
-                    var replyMessage = string.Format(ReplyMessage_GameEntry, result.GameId);
-                    await _messagingClient.ReplyMessageAsync(replyToken, new[] { new TextMessage(replyMessage) });
+                var result = await _bingoClient.CreateGameAsync(keyword);
+                await _tableStorage.UpdateGameEntryAsync(userId, result.GameId, result.AccessKey);
+
+                var replyMessage = string.Format(ReplyMessage_GameEntry, result.GameId);
+                if (!string.IsNullOrEmpty(keyword))
+                {
+                    await _messagingClient.ReplyMessageAsync(replyToken, $"合言葉を「{keyword}」に設定しました。", replyMessage);
+                }
+                else
+                {
+                    await _messagingClient.ReplyMessageAsync(replyToken, replyMessage);
                 }
             }
             catch (Exception e)
@@ -423,10 +513,12 @@ namespace LineBotFunctions
                     case "開始":
                         replyMessage = ReplyMessage_Start;
                         await _tableStorage.AddGameEntryAsync(userId);
+                        await new BingoMenuManager(_messagingClient).SetGameMenuAsync(userId);
                         break;
                     case "参加":
                         replyMessage = ReplyMessage_Join;
                         await _tableStorage.AddCardEntryAsync(userId);
+                        await new BingoMenuManager(_messagingClient).SetCardMenuAsync(userId);
                         break;
                     default:
                         replyMessage = ReplyMessage_Usage;

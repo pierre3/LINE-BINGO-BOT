@@ -32,34 +32,41 @@ namespace LineBotFunctions
                 var connectionString = ConfigurationManager.AppSettings["AzureWebJobsStorage"];
 
                 var events = await req.GetWebhookEventsAsync(channelSecret);
-                foreach (var ev in events.OfType<MessageEvent>())
-                {
-                    if (ev.Message.Type != EventMessageType.Text)
-                    {
-                        continue;
-                    }
-                    var textMessage = (TextEventMessage)ev.Message;
-                    var user = await LineMessagingClient.GetUserProfileAsync(ev.Source.UserId);
-                    var talkManager = new TalkManager(
-                            await BingoBotTableStorage.CreateAsync(connectionString),
-                            await BingoBotBlobStorage.CreateAsync(connectionString),
-                            LineMessagingClient, log);
 
-                    await talkManager.TalkAsync(ev.ReplyToken, user, textMessage.Text);
-                }
+                var talkManager = new TalkManager(
+                    await BingoBotTableStorage.CreateAsync(connectionString),
+                    await BingoBotBlobStorage.CreateAsync(connectionString),
+                    LineMessagingClient,
+                    log);
+
+                await talkManager.RunAsync(events);
                 return req.CreateResponse(HttpStatusCode.OK);
             }
             catch (InvalidSignatureException e)
             {
+                log.Error(e.ToString());
                 return req.CreateResponse(HttpStatusCode.Forbidden, new { Message = e.Message });
+            }
+            catch (LineResponseException e)
+            {
+                log.Error(e.ToString());
+                var debugUser = ConfigurationManager.AppSettings["DebugUser"];
+                if (!string.IsNullOrEmpty(debugUser))
+                {
+                    await LineMessagingClient.PushMessageAsync(debugUser, e.ResponseMessage.ToString());
+                }
             }
             catch (Exception e)
             {
                 log.Error(e.ToString());
-                return req.CreateResponse(HttpStatusCode.OK);
+                var debugUser = ConfigurationManager.AppSettings["DebugUser"];
+                if (!string.IsNullOrEmpty(debugUser))
+                {
+                    await LineMessagingClient.PushMessageAsync(debugUser, e.ToString());
+                }
             }
+            return req.CreateResponse(HttpStatusCode.OK);
         }
-
     }
 
 }
