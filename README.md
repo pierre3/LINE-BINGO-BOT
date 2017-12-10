@@ -8,4 +8,4 @@ ASP.Net Core Web API
 http://bingowebapi.azurewebsites.net/swagger/
 
 ## LineBotFunction
-Azure http trigger function
+Bot app using Azure function.
