@@ -1,5 +1,11 @@
-# BingoWebApi
-This is a BINGO game API. 
+# LINE BINGO Bot
+This is a BOT application that you can play BINGO games using LINE.
 
-## API Reference
+## BingoWebApi
+ASP.Net Core Web API
+
+### API Reference
 http://bingowebapi.azurewebsites.net/swagger/
+
+## LineBotFunction
+Azure http trigger function
